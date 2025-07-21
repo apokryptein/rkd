@@ -34,6 +34,10 @@ pub enum Commands {
         /// Memory cost in KB (Argon2/scrypt)
         #[arg(long)]
         memory: Option<u32>,
+
+        /// Parallelism factor (Argon2/scrypt)
+        #[arg(long)]
+        parallel: Option<u32>,
     },
 }
 
@@ -55,12 +59,14 @@ pub fn handle_command(command: Commands) -> Result<()> {
             iterations,
             length,
             memory,
+            parallel,
         } => {
             let options = DeriveOptions {
                 method,
                 iterations,
                 length_bits: length,
                 memory_kb: memory,
+                parallelism: parallel,
             };
 
             let (salt, key) = kdf::derive_key(&password, options)?;

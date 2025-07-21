@@ -1,14 +1,20 @@
 use anyhow::{Result, anyhow};
 use pbkdf2::pbkdf2_hmac;
 use rand::{TryRngCore, rngs::OsRng};
+use scrypt::{Params, scrypt};
 use sha2::Sha256;
 
 use crate::cli::KdfAlgorithm;
 
-// Default values for iterations and salt
+// Default PBKDF2 values
 const DEFAULT_SALT_LENGTH: usize = 16;
 const DEFAULT_PBKDF2_ITERATIONS: u32 = 600_000;
 const MIN_PBKDF2_ITERATIONS: u32 = 100_000;
+
+// Default scrypt values
+const DEFAULT_SCRYPT_N: u32 = 32768; // 2^15
+const DEFAULT_SCRYPT_R: u32 = 8;
+const DEFAULT_SCRYPT_P: u32 = 1;
 
 /// DeriveOptions represents available options provided to all
 /// key derivation functions
@@ -17,6 +23,7 @@ pub struct DeriveOptions {
     pub iterations: Option<u32>,
     pub length_bits: usize,
     pub memory_kb: Option<u32>,
+    pub parallelism: Option<u32>,
 }
 
 /// derive_key generates a random salt, parses the provided KDF and calls
@@ -25,10 +32,10 @@ pub fn derive_key(password: &str, options: DeriveOptions) -> Result<(Vec<u8>, Ve
     let salt: [u8; DEFAULT_SALT_LENGTH] = generate_salt();
 
     let key = match options.method {
-        KdfAlgorithm::Pbkdf2 => derive_pbkdf2(password, &salt, options),
+        KdfAlgorithm::Pbkdf2 => derive_pbkdf2(password, &salt, options)?,
         KdfAlgorithm::Argon2i => return Err(anyhow!("Argon2i not yet implemented")),
         KdfAlgorithm::Argon2id => return Err(anyhow!("Argon2id not yet implemented")),
-        KdfAlgorithm::Scrypt => return Err(anyhow!("Scrypt not yet implemented")),
+        KdfAlgorithm::Scrypt => derive_scrypt(password, &salt, options)?,
     };
 
     Ok((salt.to_vec(), key))
@@ -36,10 +43,11 @@ pub fn derive_key(password: &str, options: DeriveOptions) -> Result<(Vec<u8>, Ve
 
 /// pbkdf2_hash calculates a derived key using the PBKDF2 KDF given a
 /// random salt
-pub fn derive_pbkdf2(password: &str, salt: &[u8], options: DeriveOptions) -> Vec<u8> {
+pub fn derive_pbkdf2(password: &str, salt: &[u8], options: DeriveOptions) -> Result<Vec<u8>> {
     // Get iterations or use default
     let iterations = options.iterations.unwrap_or(DEFAULT_PBKDF2_ITERATIONS);
 
+    // Ensure we have the minimum number of iterations (100_000)
     if iterations < MIN_PBKDF2_ITERATIONS {
         eprintln!(
             "[WARN] {} iterations is below the recommended minimum of {}",
@@ -47,12 +55,42 @@ pub fn derive_pbkdf2(password: &str, salt: &[u8], options: DeriveOptions) -> Vec
         );
     }
 
+    // Convert length in bytes to length in bits
     let length_bytes = options.length_bits / 8;
 
+    // Generate key
     let mut hash = vec![0u8; length_bytes];
     pbkdf2_hmac::<Sha256>(password.as_bytes(), salt, iterations, &mut hash);
 
-    hash
+    Ok(hash)
+}
+
+pub fn derive_scrypt(password: &str, salt: &[u8], options: DeriveOptions) -> Result<Vec<u8>> {
+    // Set CPU/memory cost
+    let n = options
+        .memory_kb
+        .map(|mem| (mem * 1024 / 128).next_power_of_two())
+        .unwrap_or(DEFAULT_SCRYPT_N);
+
+    // Set block size
+    let r = DEFAULT_SCRYPT_R;
+
+    // Set parallelism
+    let p = options.parallelism.unwrap_or(DEFAULT_SCRYPT_P);
+
+    // Convert length in bytes to length in bits
+    let length_bytes = options.length_bits / 8;
+
+    // Instantiate scrypt params
+    let params = Params::new(n.trailing_zeros() as u8, r, p, length_bytes)
+        .map_err(|e| anyhow!("[ERR] invalid scrypt parameters: {:?}", e))?;
+
+    // Generate key
+    let mut hash = vec![0u8; length_bytes];
+    scrypt(password.as_bytes(), salt, &params, &mut hash)
+        .map_err(|e| anyhow!("[ERR] scrypt failed: {}", e))?;
+
+    Ok(hash)
 }
 
 /// generate_salt generates a random salt of a given size

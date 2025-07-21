@@ -10,3 +10,4 @@ pbkdf2 = { version = "0.12", features = ["simple"] }
 sha2 = "0.10.9"
 rand = "0.9.1"
 hex = "0.4.3"
+scrypt = "0.11.0"
