@@ -39,8 +39,8 @@ pub fn derive_key(password: &str, options: DeriveOptions) -> Result<(Vec<u8>, Ve
 
     let key = match options.method {
         KdfAlgorithm::Pbkdf2 => derive_pbkdf2(password, &salt, options)?,
-        KdfAlgorithm::Argon2i => return Err(anyhow!("Argon2i not yet implemented")),
-        KdfAlgorithm::Argon2id => derive_argon2id(password, &salt, options)?,
+        KdfAlgorithm::Argon2i => derive_argon2(password, &salt, options, Algorithm::Argon2i)?,
+        KdfAlgorithm::Argon2id => derive_argon2(password, &salt, options, Algorithm::Argon2id)?,
         KdfAlgorithm::Scrypt => derive_scrypt(password, &salt, options)?,
     };
 
@@ -100,8 +100,13 @@ pub fn derive_scrypt(password: &str, salt: &[u8], options: DeriveOptions) -> Res
     Ok(hash)
 }
 
-/// derive_argon2id calculates a derived key using the Argon2id KDF given a random salt
-pub fn derive_argon2id(password: &str, salt: &[u8], options: DeriveOptions) -> Result<Vec<u8>> {
+/// derive_argon2 calculates a derived key using the Argon2id KDF given a random salt
+pub fn derive_argon2(
+    password: &str,
+    salt: &[u8],
+    options: DeriveOptions,
+    variant: Algorithm,
+) -> Result<Vec<u8>> {
     let time = options.iterations.unwrap_or(DEFAULT_ARGON2_TIME);
     let memory = options.memory_kb.unwrap_or(DEFAULT_ARGON2_MEMORY);
     let parallelism = options.parallelism.unwrap_or(DEFAULT_ARGON2_PARALLELISM);
@@ -114,7 +119,7 @@ pub fn derive_argon2id(password: &str, salt: &[u8], options: DeriveOptions) -> R
         .map_err(|e| anyhow!("[ERR] invalid argon2 parameters: {}", e))?;
 
     // Instantiate argon2id algorithm
-    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let argon2 = Argon2::new(variant, Version::V0x13, params);
 
     // Generate key
     let mut hash = vec![0u8; length_bytes];
