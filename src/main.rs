@@ -1,4 +1,6 @@
 mod cli;
+mod crypto;
+mod encoding;
 mod kdf;
 
 use anyhow::Result;

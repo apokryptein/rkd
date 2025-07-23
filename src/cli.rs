@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 
+use crate::crypto::constant_time_eq;
+use crate::encoding::{self, print_output};
 use crate::kdf::{self, DeriveOptions};
 
 #[derive(Parser)]
@@ -19,8 +21,6 @@ pub enum Commands {
 
         /// Desired algorithm: PBKDF2, Argon2
         #[arg(long, short, value_enum, default_value = "pbkdf2")]
-        // will change default to argon2id after
-        // implementation
         method: KdfAlgorithm,
 
         /// Number of iterations
@@ -38,6 +38,44 @@ pub enum Commands {
         /// Parallelism factor (Argon2/scrypt)
         #[arg(long)]
         parallel: Option<u32>,
+
+        /// Output format
+        #[arg(long, short, value_enum, default_value = "hex")]
+        format: OutputFormat,
+    },
+    Verify {
+        /// Password to verify
+        #[arg(long, short)]
+        password: String,
+
+        /// Hash (hex or base64)
+        #[arg(long)]
+        hash: String,
+
+        /// Salt (hex or base64)
+        #[arg(long)]
+        salt: String,
+
+        /// KDF algorithm
+        #[arg(long, short, value_enum, default_value = "pbkdf2")]
+        method: KdfAlgorithm,
+
+        /// Parameters used (if different from defaults)
+        #[arg(long, short)]
+        iterations: Option<u32>,
+
+        #[arg(long)]
+        memory: Option<u32>,
+
+        #[arg(long, default_value = "256")]
+        length: usize,
+
+        #[arg(long)]
+        parallel: Option<u32>,
+
+        /// Input format
+        #[arg(long, short, value_enum, default_value = "hex")]
+        format: InputFormat,
     },
 }
 
@@ -47,6 +85,18 @@ pub enum KdfAlgorithm {
     Argon2i,
     Argon2id,
     Scrypt,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum InputFormat {
+    Hex,
+    Base64,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum OutputFormat {
+    Hex,
+    Base64,
 }
 
 /// handle_command instantiates DeriveOptions using provided CLI
@@ -60,6 +110,7 @@ pub fn handle_command(command: Commands) -> Result<()> {
             length,
             memory,
             parallel,
+            format,
         } => {
             let options = DeriveOptions {
                 method,
@@ -67,16 +118,56 @@ pub fn handle_command(command: Commands) -> Result<()> {
                 length_bits: length,
                 memory_kb: memory,
                 parallelism: parallel,
+                salt: None,
             };
 
+            // Derive key
             let (salt, key) = kdf::derive_key(&password, options)?;
 
             // Alert user
-            // TODO: impelement formatting package
-            println!("Salt: {}", hex::encode(salt));
-            println!("Key:  {}", hex::encode(key));
+            print_output(&salt, &key, format);
 
             Ok(())
+        }
+        Commands::Verify {
+            password,
+            hash,
+            salt,
+            method,
+            iterations,
+            memory,
+            length,
+            parallel,
+            format,
+        } => {
+            // Decode salt and hash bytes provided by user
+            let expected_hash = encoding::decode_input(&hash, format)?;
+            let salt_bytes = encoding::decode_input(&salt, format)?;
+
+            // Set options
+            let options = DeriveOptions {
+                method,
+                iterations,
+                length_bits: length,
+                memory_kb: memory,
+                parallelism: parallel,
+                salt: Some(salt_bytes),
+            };
+
+            // Generate key using provided salt and options
+            let (_, key) = kdf::derive_key(&password, options)?;
+
+            // Compare with provided hash
+            match constant_time_eq(&expected_hash as &[u8], &key as &[u8]) {
+                true => {
+                    println!("[SUCCESS] Password verified");
+                    Ok(())
+                }
+                false => {
+                    println!("[FAIL] Password verification failed");
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }

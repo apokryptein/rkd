@@ -1,11 +1,11 @@
 use anyhow::{Result, anyhow};
 use argon2::{Algorithm, Argon2, Params, Version};
 use pbkdf2::pbkdf2_hmac;
-use rand::{TryRngCore, rngs::OsRng};
 use scrypt::scrypt;
 use sha2::Sha256;
 
 use crate::cli::KdfAlgorithm;
+use crate::crypto::generate_salt;
 
 // Default PBKDF2 values
 const DEFAULT_SALT_LENGTH: usize = 16;
@@ -30,18 +30,24 @@ pub struct DeriveOptions {
     pub length_bits: usize,
     pub memory_kb: Option<u32>,
     pub parallelism: Option<u32>,
+    pub salt: Option<Vec<u8>>,
 }
 
 /// derive_key generates a random salt, parses the provided KDF and calls
 /// the appropriate KDF function
 pub fn derive_key(password: &str, options: DeriveOptions) -> Result<(Vec<u8>, Vec<u8>)> {
-    let salt: [u8; DEFAULT_SALT_LENGTH] = generate_salt();
+    // Check if salt is provided
+    // We have to clone to avoid a partial move of the salt vec
+    let salt = match options.salt.clone() {
+        Some(s) => s,
+        None => generate_salt(DEFAULT_SALT_LENGTH),
+    };
 
     let key = match options.method {
-        KdfAlgorithm::Pbkdf2 => derive_pbkdf2(password, &salt, options)?,
-        KdfAlgorithm::Argon2i => derive_argon2(password, &salt, options, Algorithm::Argon2i)?,
-        KdfAlgorithm::Argon2id => derive_argon2(password, &salt, options, Algorithm::Argon2id)?,
-        KdfAlgorithm::Scrypt => derive_scrypt(password, &salt, options)?,
+        KdfAlgorithm::Pbkdf2 => derive_pbkdf2(password, &salt, &options)?,
+        KdfAlgorithm::Argon2i => derive_argon2(password, &salt, &options, Algorithm::Argon2i)?,
+        KdfAlgorithm::Argon2id => derive_argon2(password, &salt, &options, Algorithm::Argon2id)?,
+        KdfAlgorithm::Scrypt => derive_scrypt(password, &salt, &options)?,
     };
 
     Ok((salt.to_vec(), key))
@@ -49,15 +55,14 @@ pub fn derive_key(password: &str, options: DeriveOptions) -> Result<(Vec<u8>, Ve
 
 /// derive_pbkdf2 calculates a derived key using the PBKDF2 KDF given a
 /// random salt
-pub fn derive_pbkdf2(password: &str, salt: &[u8], options: DeriveOptions) -> Result<Vec<u8>> {
+pub fn derive_pbkdf2(password: &str, salt: &[u8], options: &DeriveOptions) -> Result<Vec<u8>> {
     // Get iterations or use default
     let iterations = options.iterations.unwrap_or(DEFAULT_PBKDF2_ITERATIONS);
 
     // Ensure we have the minimum number of iterations (100_000)
     if iterations < MIN_PBKDF2_ITERATIONS {
         eprintln!(
-            "[WARN] {} iterations is below the recommended minimum of {}",
-            iterations, MIN_PBKDF2_ITERATIONS
+            "[WARN] {iterations} iterations is below the recommended minimum of {MIN_PBKDF2_ITERATIONS}",
         );
     }
 
@@ -72,7 +77,7 @@ pub fn derive_pbkdf2(password: &str, salt: &[u8], options: DeriveOptions) -> Res
 }
 
 /// derive_scrypt calculates a derived key using the scrypt KDF given a random salt
-pub fn derive_scrypt(password: &str, salt: &[u8], options: DeriveOptions) -> Result<Vec<u8>> {
+pub fn derive_scrypt(password: &str, salt: &[u8], options: &DeriveOptions) -> Result<Vec<u8>> {
     // Set CPU/memory cost
     let n = options
         .memory_kb
@@ -104,7 +109,7 @@ pub fn derive_scrypt(password: &str, salt: &[u8], options: DeriveOptions) -> Res
 pub fn derive_argon2(
     password: &str,
     salt: &[u8],
-    options: DeriveOptions,
+    options: &DeriveOptions,
     variant: Algorithm,
 ) -> Result<Vec<u8>> {
     let time = options.iterations.unwrap_or(DEFAULT_ARGON2_TIME);
@@ -128,11 +133,4 @@ pub fn derive_argon2(
         .map_err(|e| anyhow!("[ERR] argon2 failed: {}", e))?;
 
     Ok(hash)
-}
-
-/// generate_salt generates a random salt of a given size
-pub fn generate_salt<const N: usize>() -> [u8; N] {
-    let mut salt = [0u8; N];
-    let _ = OsRng.try_fill_bytes(&mut salt);
-    salt
 }
