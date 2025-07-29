@@ -97,6 +97,7 @@ pub enum InputFormat {
 pub enum OutputFormat {
     Hex,
     Base64,
+    Phc,
 }
 
 /// handle_command instantiates DeriveOptions using provided CLI
@@ -122,10 +123,10 @@ pub fn handle_command(command: Commands) -> Result<()> {
             };
 
             // Derive key
-            let (salt, key) = kdf::derive_key(&password, options)?;
+            let (salt, key) = kdf::derive_key(&password, &options)?;
 
             // Alert user
-            print_output(&salt, &key, format);
+            print_output(&salt, &key, format, &options);
 
             Ok(())
         }
@@ -155,7 +156,7 @@ pub fn handle_command(command: Commands) -> Result<()> {
             };
 
             // Generate key using provided salt and options
-            let (_, key) = kdf::derive_key(&password, options)?;
+            let (_, key) = kdf::derive_key(&password, &options)?;
 
             // Compare with provided hash
             match constant_time_eq(&expected_hash as &[u8], &key as &[u8]) {

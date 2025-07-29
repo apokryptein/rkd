@@ -8,19 +8,19 @@ use crate::cli::KdfAlgorithm;
 use crate::crypto::generate_salt;
 
 // Default PBKDF2 values
-const DEFAULT_SALT_LENGTH: usize = 16;
-const DEFAULT_PBKDF2_ITERATIONS: u32 = 600_000;
-const MIN_PBKDF2_ITERATIONS: u32 = 100_000;
+pub const DEFAULT_SALT_LENGTH: usize = 16;
+pub const DEFAULT_PBKDF2_ITERATIONS: u32 = 600_000;
+pub const MIN_PBKDF2_ITERATIONS: u32 = 100_000;
 
 // Default scrypt values
-const DEFAULT_SCRYPT_N: u32 = 32768; // 2^15
-const DEFAULT_SCRYPT_R: u32 = 8;
-const DEFAULT_SCRYPT_P: u32 = 1;
+pub const DEFAULT_SCRYPT_N: u32 = 32768; // 2^15
+pub const DEFAULT_SCRYPT_R: u32 = 8;
+pub const DEFAULT_SCRYPT_P: u32 = 1;
 
 // Default argon2 values
-const DEFAULT_ARGON2_TIME: u32 = 3;
-const DEFAULT_ARGON2_MEMORY: u32 = 65536; // 64 MB
-const DEFAULT_ARGON2_PARALLELISM: u32 = 4;
+pub const DEFAULT_ARGON2_TIME: u32 = 3;
+pub const DEFAULT_ARGON2_MEMORY: u32 = 65536; // 64 MB
+pub const DEFAULT_ARGON2_PARALLELISM: u32 = 4;
 
 /// DeriveOptions represents available options provided to all
 /// key derivation functions
@@ -35,11 +35,11 @@ pub struct DeriveOptions {
 
 /// derive_key generates a random salt, parses the provided KDF and calls
 /// the appropriate KDF function
-pub fn derive_key(password: &str, options: DeriveOptions) -> Result<(Vec<u8>, Vec<u8>)> {
+pub fn derive_key(password: &str, options: &DeriveOptions) -> Result<(Vec<u8>, Vec<u8>)> {
     // Check if salt is provided
     // We have to clone to avoid a partial move of the salt vec
-    let salt = match options.salt.clone() {
-        Some(s) => s,
+    let salt = match &options.salt {
+        Some(s) => s.clone(),
         None => generate_salt(DEFAULT_SALT_LENGTH),
     };
 
