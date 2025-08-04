@@ -1,7 +1,6 @@
 # rkd
 
-A minimal key derivation tool written in Rust. This tool was built for
-learning and to explore Rust's crypto crates.
+A minimal key derivation tool built for learning and to explore Rust's crypto crates.
 
 ## Supported Algorithms
 
